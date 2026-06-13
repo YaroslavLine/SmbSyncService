@@ -1,0 +1,5 @@
+dotnet publish -c Release -r win-x64 --self-contained true
+sc.exe create SmbTwoWaySync binPath= "C:\Program Files\SmbSyncService\bin\Release\net10.0\win-x64\publish\SmbSyncService.exe" start= auto
+sc.exe start SmbTwoWaySync
+sc.exe stop SmbTwoWaySync
+sc.exe delete SmbTwoWaySync

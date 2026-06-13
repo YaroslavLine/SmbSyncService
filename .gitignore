@@ -1,0 +1,4 @@
+/bin
+appsettings.Production.json
+/obj
+SmbSyncService.csproj.lscache
