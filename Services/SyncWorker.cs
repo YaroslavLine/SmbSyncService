@@ -17,45 +17,40 @@ public class SyncWorker : BackgroundService
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+{
+    // Запам'ятовуємо, коли була остання планова синхронізація
+    DateTime? lastRunDate = null; 
+
+    while (!stoppingToken.IsCancellationRequested)
     {
-        bool isFirstRun = true;
+        var config = _configMonitor.CurrentValue;
+        DateTime now = DateTime.Now;
 
-        while (!stoppingToken.IsCancellationRequested)
+        // Перевіряємо, чи настав час для планової синхронізації
+        // Умова: поточний час БІЛЬШЕ або ДОРІВНЮЄ заданому в конфізі, І сьогодні ми ще не синхронізували
+        bool isTimeToRun = now.TimeOfDay >= config.SyncTime 
+                           && (!lastRunDate.HasValue || lastRunDate.Value.Date < now.Date);
+
+        if (isTimeToRun)
         {
-            var config = _configMonitor.CurrentValue;
-
-            // 1. Run immediately if the service just booted up
-            if (isFirstRun)
-            {
-                _logger.LogInformation("Service started. Executing initial startup synchronization...");
-                RunSyncCycle(config);
-                isFirstRun = false;
-            }
-
-            // 2. Calculate the delay until the next scheduled time
-            TimeSpan delay = CalculateDelayUntilNextRun(config.SyncTime);
+            _logger.LogInformation("Scheduled time reached. Waking up for synchronization...");
+            RunSyncCycle(config);
             
-            _logger.LogInformation("Next sync scheduled in {DelayHours} hours and {DelayMinutes} minutes.", 
-                delay.Hours, delay.Minutes);
+            // Відмічаємо, що на сьогодні роботу виконано
+            lastRunDate = now.Date; 
+        }
 
-            // 3. Go to sleep
-            try
-            {
-                await Task.Delay(delay, stoppingToken);
-            }
-            catch (TaskCanceledException)
-            {
-                break; 
-            }
-
-            // 4. Wake up and run the scheduled sync
-            if (!stoppingToken.IsCancellationRequested)
-            {
-                _logger.LogInformation("Waking up for scheduled synchronization...");
-                RunSyncCycle(config);
-            }
+        // Короткий пульс: засинаємо рівно на 1 хвилину
+        try
+        {
+            await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
+        }
+        catch (TaskCanceledException)
+        {
+            break; 
         }
     }
+}
 
     // Extract the execution loop into a clean helper method
     private void RunSyncCycle(SyncConfig config)
