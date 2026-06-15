@@ -18,15 +18,27 @@ public class SyncWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        bool isFirstRun = true;
+
         while (!stoppingToken.IsCancellationRequested)
         {
             var config = _configMonitor.CurrentValue;
 
+            // 1. Run immediately if the service just booted up
+            if (isFirstRun)
+            {
+                _logger.LogInformation("Service started. Executing initial startup synchronization...");
+                RunSyncCycle(config);
+                isFirstRun = false;
+            }
+
+            // 2. Calculate the delay until the next scheduled time
             TimeSpan delay = CalculateDelayUntilNextRun(config.SyncTime);
             
             _logger.LogInformation("Next sync scheduled in {DelayHours} hours and {DelayMinutes} minutes.", 
                 delay.Hours, delay.Minutes);
 
+            // 3. Go to sleep
             try
             {
                 await Task.Delay(delay, stoppingToken);
@@ -36,23 +48,29 @@ public class SyncWorker : BackgroundService
                 break; 
             }
 
+            // 4. Wake up and run the scheduled sync
             if (!stoppingToken.IsCancellationRequested)
             {
-                _logger.LogInformation("Executing scheduled synchronization for {Count} pairs...", config.Pairs.Count);
+                _logger.LogInformation("Waking up for scheduled synchronization...");
+                RunSyncCycle(config);
+            }
+        }
+    }
+
+    // Extract the execution loop into a clean helper method
+    private void RunSyncCycle(SyncConfig config)
+    {
+        _logger.LogInformation("Processing {Count} folder pairs...", config.Pairs.Count);
                 
-                // Loop through each folder pair in the config
-                foreach (var pair in config.Pairs)
-                {
-                    try
-                    {
-                        ProcessPair(pair);
-                    }
-                    catch (Exception ex)
-                    {
-                        // Catch errors per-pair so a failure in one doesn't crash the others
-                        _logger.LogError(ex, "[{JobId}] An error occurred during synchronization.", pair.JobId);
-                    }
-                }
+        foreach (var pair in config.Pairs)
+        {
+            try
+            {
+                ProcessPair(pair);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[{JobId}] An error occurred during synchronization.", pair.JobId);
             }
         }
     }
